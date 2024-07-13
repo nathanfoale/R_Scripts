@@ -1,0 +1,197 @@
+library(fitzRoy)
+library(dplyr)
+library(shiny)
+library(DT)
+
+# Define the loading and formatting functions
+format_column_names <- function(names) {
+  names <- gsub("DreamTeamPoints", "AFL Fantasy Points", names)
+  names <- gsub("([a-z])([A-Z])", "\\1 \\2", names)
+  return(names)
+}
+process_team_showdown_results <- function() {
+  results <- fetch_results_afltables(1997:2023)  # Fetch match results from 1997 to 2023
+  showdown_results <- results %>%
+    filter((Home.Team == "Adelaide" & Away.Team == "Port Adelaide") |
+             (Home.Team == "Port Adelaide" & Away.Team == "Adelaide")) %>%
+    mutate(
+      Home_Score = Home.Goals * 6 + Home.Behinds,
+      Away_Score = Away.Goals * 6 + Away.Behinds,
+      Calculated_Margin = Home_Score - Away_Score,
+      Winner = case_when(
+        Calculated_Margin > 0 ~ Home.Team,
+        Calculated_Margin < 0 ~ Away.Team,
+        TRUE ~ "Tie"
+      ),
+      Absolute_Margin = abs(Calculated_Margin)
+    )
+  
+  annual_summary <- showdown_results %>%
+    group_by(Season) %>%
+    summarise(
+      Total_Games = n(),
+      Wins_Port_Adelaide = sum(Winner == "Port Adelaide"),
+      Wins_Adelaide = sum(Winner == "Adelaide"),
+      Average_Winning_Margin = mean(Absolute_Margin, na.rm = TRUE)
+    )
+  
+  return(annual_summary)
+}
+
+# Load the AFL 2024 stats when the app starts
+afl_stats <- read.csv("/Users/nathanfoale/Desktop/data/afl-team-stats-2024.csv", stringsAsFactors = FALSE)
+colnames(afl_stats) <- format_column_names(colnames(afl_stats))
+
+# UI setup with conditional input for AFL 2024 stats
+ui <- fluidPage(
+  titlePanel("AFL Statistics Dashboard"),
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("viewSelect", "Choose View:", 
+                  choices = c("AFL Team Stats 2024", "Showdown 'Team' Stats", "Showdown 'Player' Stats")),
+      conditionalPanel(
+        condition = "input.viewSelect === 'AFL Team Stats 2024'",
+        selectInput("statCategory", "Choose a Stat Category:", 
+                    choices = names(afl_stats)[-2]),  # Exclude the 'Team' column
+        tags$h4("Abbreviations:"),
+        tags$ul(
+          tags$li("Kick: Kicks"),
+          tags$li("HB: Handballs"),
+          tags$li("Dis.: Disposals"),
+          tags$li("Eff %: Disposal Efficiency"),
+          tags$li("Kick Eff %: Kick Efficiency"),
+          tags$li("Kick %: Kicks / Disposals"),
+          tags$li("D / O Tk: Disposals / Opposition Tackle"),
+          tags$li("In 50s: Inside 50s"),
+          tags$li("Reb 50s: Rebound 50s"),
+          tags$li("R50 Rate: Rebound 50s per Opposition Inside 50"),
+          tags$li("Mtrs Gnd: Metres gained"),
+          tags$li("Mtrs / D: Metres gained per Disposal"),
+          tags$li("Clng: Clangers"),
+          tags$li("D/Cg: Disposals per clanger"),
+          tags$li("TO: Turnovers"),
+          tags$li("D/TO: Disposals per turnover"),
+          tags$li("CP: Contested possessions"),
+          tags$li("UP: Uncontested possessions"),
+          tags$li("Poss: Total possessions"),
+          tags$li("CP%: Contested possessions / total possessions"),
+          tags$li("Int Poss: Intercept possessions"),
+          tags$li("GB Gets: Ground ball gets"),
+          tags$li("Ctr Clr: Centre clearances"),
+          tags$li("Stp Clr: Stoppage clearances"),
+          tags$li("Tot: Total clearances"),
+          tags$li("Tot: Total marks"),
+          tags$li("CM: Contested marks"),
+          tags$li("In 50: Marks inside forward 50"),
+          tags$li("M50 Rate: Marks inside forward 50 per inside 50"),
+          tags$li("Int Mks: Intercept marks"),
+          tags$li("On lead: Marks on lead"),
+          tags$li("Goal Sc.: Total goal scorers"),
+          tags$li("Avg GS: Average goal scorers per match"),
+          tags$li("Gls: Goals"),
+          tags$li("Beh: Behinds (includes rushed behinds)"),
+          tags$li("RB: Rushed behinds"),
+          tags$li("Shots: Shots at goal"),
+          tags$li("Goal Ass.: Goal assists"),
+          tags$li("Acc: Accuracy (Goals / shots at goal)"),
+          tags$li("G / In 50: Goals / Inside 50"),
+          tags$li("SS / In 50: Scoring shots / Inside 50 (includes rushed behinds)"),
+          tags$li("S / In 50: Shots at goal / Inside 50"),
+          tags$li("SI: Score involvements"),
+          tags$li("Launch: Score launches"),
+          tags$li("Off 1v1: Offensive one-on-one contests"),
+          tags$li("Win %: Percentage of offensive one-on-one contests won"),
+          tags$li("xSc: Average expected score per game (excludes rushed behinds)"),
+          tags$li("+/-: Average score above or below expected per game (excludes rushed behinds)"),
+          tags$li("xSc / Shot: Average expected score per shot at goal, reflecting the average difficulty of shots taken"),
+          tags$li("Rating: Average score above or below expected score per shot at goal"),
+          tags$li("xSc / Sh (Set): Average expected score per shot at goal for set shots, reflecting the average difficulty of shots taken"),
+          tags$li("Rating (Set): Average score above or below expected score per shot at goal for set shots"),
+          tags$li("xSc / Sh (Gen): Average expected score per shot at goal for shots in general play, reflecting the average difficulty of shots taken"),
+          tags$li("Rating (Gen): Average score above or below expected score per shot at goal for shots in general play"),
+          tags$li("Def 1v1: Defensive one-on-one contests"),
+          tags$li("Loss %: Percentage of defensive one-on-one contests lost"),
+          tags$li("Tack: Total tackles"),
+          tags$li("Tack In 50: Tackles inside forward 50"),
+          tags$li("Press. Acts: Pressure acts"),
+          tags$li("Ruck Cont: Total ruck contests"),
+          tags$li("Hit Outs: Total hit outs"),
+          tags$li("Win %: Hit outs / ruck contests"),
+          tags$li("To Adv: Hit outs to advantage"),
+          tags$li("Adv %: Hit outs to advantage / total hit outs"),
+          tags$li("KI Play On %: Play on percentage from kick-ins"),
+          tags$li("Bounce: Bounces"),
+          tags$li("1%'sOne percenters"),
+          
+        )),
+      conditionalPanel(
+        condition = "input.viewSelect === 'Player Showdown Stats'",
+        tags$p("Players included are from 1997 to 2023 who have played more than 8 games in Showdown matches."),
+        img(src = "/Users/nathanfoale/Desktop/data/pafc.png", height = 200, width = 400)
+      )
+    ),
+    
+    mainPanel(
+      DTOutput("dataTable"),
+      textOutput("infoText")
+    )
+  )
+)
+
+
+
+server <- function(input, output) {
+  output$dataTable <- renderDT({
+    req(input$viewSelect)  # Require the selection to proceed
+    if (input$viewSelect == "AFL Team Stats 2024") {
+      datatable(afl_stats %>%
+                  select(Team, all_of(input$statCategory)) %>%
+                  arrange(desc(!!as.symbol(input$statCategory))) %>%
+                  mutate(Rank = row_number()), options = list(pageLength = 19))
+    } else if (input$viewSelect == "Showdown 'Team' Stats") {
+      datatable(process_team_showdown_results(), options = list(pageLength = 108))
+    } else if (input$viewSelect == "Showdown 'Player' Stats") {
+      datatable(process_player_stats(), options = list(pageLength = 108))
+    }
+  }, options = list(dom = 't', paging = FALSE))  # Remove pagination
+}
+
+# Function to fetch and process player statistics for showdowns
+process_player_stats <- function() {
+  stats_afltables <- fetch_player_stats_afltables(1997:2023)
+  port_vs_adelaide <- stats_afltables %>%
+    filter((Playing.for == "Port Adelaide" & Away.team == "Adelaide") |
+             (Playing.for == "Adelaide" & Away.team == "Port Adelaide") |
+             (Playing.for == "Port Adelaide" & Home.team == "Adelaide") |
+             (Playing.for == "Adelaide" & Home.team == "Port Adelaide"))
+  
+  player_averages <- port_vs_adelaide %>%
+    group_by(First.name, Surname) %>%
+    summarise(
+      Average_Goals = mean(Goals, na.rm = TRUE),
+      Average_Disposals = mean(Kicks + Handballs, na.rm = TRUE),
+      Average_Brownlow_Votes = mean(Brownlow.Votes, na.rm = TRUE),
+      Average_Goal_Assists = mean(Goal.Assists, na.rm = TRUE),
+      Average_Clearances = mean(Clearances, na.rm = TRUE),
+      Average_i50s = mean(Inside.50s, na.rm = TRUE),
+      Average_Marks_i50 = mean(Marks.Inside.50, na.rm = TRUE),
+      Average_Clangers = mean(Clangers, na.rm = TRUE),
+      Total_Games = n(),
+      Goals_In_A_Game = max(Goals, na.rm = TRUE),
+      Disposals_In_A_Game = max(Kicks + Handballs, na.rm = TRUE),
+      Goal_Assists_In_A_Game = max(Goal.Assists, na.rm = TRUE),
+      Clearances_In_A_Game = max(Clearances, na.rm = TRUE),
+      Tackles_In_A_Game = max(Tackles, na.rm = TRUE),
+      Clangers_In_A_Game = max(Clangers, na.rm = TRUE),
+      i50s_In_A_Game = max(Inside.50s, na.rm = TRUE),
+      Mark_i50_In_A_Game = max(Marks.Inside.50, na.rm = TRUE),
+      One_percenters_In_A_Game = max(One.Percenters, na.rm = TRUE),
+      .groups = 'drop'
+    ) %>%
+    filter(Total_Games >= 8)
+  
+  return(player_averages)
+}
+
+# Run the application
+shinyApp(ui, server)
