@@ -1,0 +1,126 @@
+library(fitzRoy)
+library(dplyr)
+library(shiny)
+library(DT)
+library(rsconnect)
+library(rsconnect)
+
+
+# Define the loading and formatting functions
+format_column_names <- function(names) {
+  names <- gsub("DreamTeamPoints", "AFL Fantasy Points", names)
+  names <- gsub("([a-z])([A-Z])", "\\1 \\2", names)
+  return(names)
+}
+process_team_showdown_results <- function() {
+  results <- fetch_results_afltables(1997:2023)  # Fetch match results from 1997 to 2023
+  showdown_results <- results %>%
+    filter((Home.Team == "Adelaide" & Away.Team == "Port Adelaide") |
+             (Home.Team == "Port Adelaide" & Away.Team == "Adelaide")) %>%
+    mutate(
+      Home_Score = Home.Goals * 6 + Home.Behinds,
+      Away_Score = Away.Goals * 6 + Away.Behinds,
+      Calculated_Margin = Home_Score - Away_Score,
+      Winner = case_when(
+        Calculated_Margin > 0 ~ Home.Team,
+        Calculated_Margin < 0 ~ Away.Team,
+        TRUE ~ "Tie"
+      ),
+      Absolute_Margin = abs(Calculated_Margin)
+    )
+  
+  annual_summary <- showdown_results %>%
+    group_by(Season) %>%
+    summarise(
+      Total_Games = n(),
+      Wins_Port_Adelaide = sum(Winner == "Port Adelaide"),
+      Wins_Adelaide = sum(Winner == "Adelaide"),
+      Average_Winning_Margin = mean(Absolute_Margin, na.rm = TRUE)
+    )
+  
+  return(annual_summary)
+}
+
+# Load the AFL 2024 stats when the app starts
+afl_stats <- read.csv("afl-team-stats-2024.csv", stringsAsFactors = FALSE)
+colnames(afl_stats) <- format_column_names(colnames(afl_stats))
+
+# UI setup with conditional input for AFL 2024 stats
+ui <- fluidPage(
+  titlePanel("Port Adelaide v Adelaide Showdown Dashboard (1997-2023)"),
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("viewSelect", "Choose View:", 
+                  choices = c("Showdown 'Team' Stats", "Showdown 'Player' Stats")),
+     
+      conditionalPanel(
+        condition = "input.viewSelect === Showdown 'Player' Stats",
+        tags$p("Player Stats: 8+ Showdown Games Played")
+        
+      )
+    ),
+
+    mainPanel(
+      DTOutput("dataTable"),
+      textOutput("infoText")
+    )
+  )
+
+)
+
+
+server <- function(input, output) {
+  output$dataTable <- renderDT({
+    req(input$viewSelect)  # Require the selection to proceed
+    if (input$viewSelect == "AFL Team Stats 2024") {
+      datatable(afl_stats %>%
+                  select(Team, all_of(input$statCategory)) %>%
+                  arrange(desc(!!as.symbol(input$statCategory))) %>%
+                  mutate(Rank = row_number()), options = list(pageLength = 19))
+    } else if (input$viewSelect == "Showdown 'Team' Stats") {
+      datatable(process_team_showdown_results(), options = list(pageLength = 108))
+    } else if (input$viewSelect == "Showdown 'Player' Stats") {
+      datatable(process_player_stats(), options = list(pageLength = 108))
+    }
+  }, options = list(dom = 't', paging = FALSE))  # Remove pagination
+}
+
+# Function to fetch and process player statistics for showdowns
+process_player_stats <- function() {
+  stats_afltables <- fetch_player_stats_afltables(1997:2023)
+  port_vs_adelaide <- stats_afltables %>%
+    filter((Playing.for == "Port Adelaide" & Away.team == "Adelaide") |
+             (Playing.for == "Adelaide" & Away.team == "Port Adelaide") |
+             (Playing.for == "Port Adelaide" & Home.team == "Adelaide") |
+             (Playing.for == "Adelaide" & Home.team == "Port Adelaide"))
+  
+  player_averages <- port_vs_adelaide %>%
+    group_by(First.name, Surname) %>%
+    summarise(
+      Average_Goals = mean(Goals, na.rm = TRUE),
+      Average_Disposals = mean(Kicks + Handballs, na.rm = TRUE),
+      Average_Brownlow_Votes = mean(Brownlow.Votes, na.rm = TRUE),
+      Average_Goal_Assists = mean(Goal.Assists, na.rm = TRUE),
+      Average_Clearances = mean(Clearances, na.rm = TRUE),
+      Average_i50s = mean(Inside.50s, na.rm = TRUE),
+      Average_Marks_i50 = mean(Marks.Inside.50, na.rm = TRUE),
+      Average_Clangers = mean(Clangers, na.rm = TRUE),
+      Total_Games = n(),
+      Goals_In_A_Game = max(Goals, na.rm = TRUE),
+      Disposals_In_A_Game = max(Kicks + Handballs, na.rm = TRUE),
+      Goal_Assists_In_A_Game = max(Goal.Assists, na.rm = TRUE),
+      Clearances_In_A_Game = max(Clearances, na.rm = TRUE),
+      Tackles_In_A_Game = max(Tackles, na.rm = TRUE),
+      Clangers_In_A_Game = max(Clangers, na.rm = TRUE),
+      i50s_In_A_Game = max(Inside.50s, na.rm = TRUE),
+      Mark_i50_In_A_Game = max(Marks.Inside.50, na.rm = TRUE),
+      One_percenters_In_A_Game = max(One.Percenters, na.rm = TRUE),
+      .groups = 'drop'
+    ) %>%
+    filter(Total_Games >= 8)
+  
+  return(player_averages)
+}
+
+# Run the application
+shinyApp(ui, server)
