@@ -1,0 +1,388 @@
+# Scraping data from fitzRoy package
+data <- fitzRoy::fetch_player_stats_afltables(season = 2022)
+data2 <- fitzRoy::fetch_player_stats_afltables(season = 2021)
+
+data_2023 <- fitzRoy::fetch_player_stats_afltables(season = 2023)
+data_2022 <- fitzRoy::fetch_player_stats_afltables(season = 2022)
+data_2021 <- fitzRoy::fetch_player_stats_afltables(season = 2021)
+data_2020 <- fitzRoy::fetch_player_stats_afltables(season = 2020)
+data_2019 <- fitzRoy::fetch_player_stats_afltables(season = 2019)
+data_2018 <- fitzRoy::fetch_player_stats_afltables(season = 2018)
+data_2017 <- fitzRoy::fetch_player_stats_afltables(season = 2017)
+data_2016 <- fitzRoy::fetch_player_stats_afltables(season = 2016)
+data_2015 <- fitzRoy::fetch_player_stats_afltables(season = 2015)
+data_2014 <- fitzRoy::fetch_player_stats_afltables(season = 2014)
+
+
+combined_data <- rbind(data_2023, data_2022, data_2021, data_2020, data_2019, data_2018,data_2017, data_2016, data_2015, data_2014)
+
+combined_data$Round <- as.numeric(combined_data$Round)
+combined_data$Date <- as.Date(combined_data$Date, format="%Y-%m-%d")
+
+# Check for missing values
+summary(combined_data)
+combined_data <- na.omit(combined_data)  # Example method to handle NA
+
+colnames(combined_data)
+# Exploratory Data Analysis
+summary(combined_data)
+hist(combined_data$Brownlow.Votes)
+
+combined_data$Disposals <- combined_data$Kicks + combined_data$Handballs
+
+data_subset <- combined_data[, c("Brownlow.Votes", "Marks", "Uncontested.Possessions", "Goals", "Tackles", 
+                                 "Clearances", "Contested.Possessions", "Goal.Assists", "Inside.50s")]
+
+# Adjust plot margins (may need to tweak these values based on your display)
+par(mar=c(5, 5, 4, 2) + 0.1)
+
+# Create the correlation plot
+pairs.panels(data_subset, 
+             scale = TRUE,   # Standardize variables
+             smoother = TRUE,  # Add a smoother to the scatterplots
+             hist.col = "#00AFBB")  # Color for histograms
+
+combined_data$Contested_Clearances_Interaction <- combined_data$Contested.Possessions * combined_data$Clearances
+
+# Update the data subset to include the new interaction variable
+data_subset <- combined_data[, c("Brownlow.Votes", "Disposals", "Goals", "Tackles", 
+                                 "Clearances", "Contested.Possessions", "Goal.Assists", 
+                                 "Inside.50s", "Contested_Clearances_Interaction")]
+
+# Re-plot with the updated dataset
+pairs.panels(data_subset, scale = TRUE, smoother = TRUE, hist.col = "#00AFBB")
+
+
+
+library(MASS)
+
+# Assuming 'data_frame' is your dataset and 'votes' is the ordinal outcome
+# The independent variables are placeholders and should be replaced with actual predictors
+
+combined_data$Brownlow.Votes <- factor(combined_data$Brownlow.Votes, levels = c("0", "1", "2", "3"), ordered = TRUE)
+
+
+# Fit the ordinal logistic regression model
+model <- polr(Brownlow.Votes ~ Disposals + Goals + Tackles + Clearances + Contested.Possessions + Frees.For + Inside.50s + Goal.Assists + Rebounds, data = combined_data, Hess = TRUE)
+
+# Summary of the model
+summary(model)
+
+
+
+
+
+
+
+
+
+
+
+
+# Once the Disposals column is added, you can proceed with the correlation analysis:
+correlations <- cor(combined_data[, c("Brownlow.Votes", "Disposals", "Goals", "Tackles", "Clearances", "Contested.Possessions", "Goal.Assists","Inside.50s")], use = "complete.obs")
+print(correlations)
+
+
+# Linear Regression Model
+model <- lm(Brownlow.Votes ~ Disposals + Goals + Tackles + Clearances + Contested.Possessions + Frees.For + Inside.50s + Goal.Assists, data = combined_data)
+summary(model)
+
+# Diagnostic Plots
+par(mfrow = c(2, 2))
+plot(model)
+
+
+combined_data$Brownlow.Votes.log <- log(combined_data$Brownlow.Votes + 1)
+
+# Fitting a robust regression model on the transformed data
+library(MASS)
+options(digits=10)
+summary(robust_model)
+robust_model <- rlm(Brownlow.Votes.log ~ Disposals + Goals + Tackles + Clearances + Contested.Possessions, data = combined_data)
+summary(robust_model)
+
+# Plotting diagnostic plots for the new robust model
+par(mfrow = c(2, 2))
+plot(robust_model)
+
+
+glm_model <- glm(Brownlow.Votes ~ Disposals + Goals + Tackles + Clearances + Contested.Possessions, 
+                 family = poisson(link = "log"), data = combined_data)
+summary(glm_model)
+
+par(mfrow=c(2, 2))
+plot(glm_model)
+
+library(caret)
+set.seed(123)
+train_control <- trainControl(method = "cv", number = 10)
+cv_model <- train(Brownlow.Votes ~ Disposals + Goals + Tackles + Clearances + Contested.Possessions, 
+                  data = combined_data, method = "glm", family = poisson, trControl = train_control)
+print(cv_model)
+plot(glm_model)
+
+
+
+
+nb_model <- glm.nb(Brownlow.Votes ~ Disposals + Goals + Tackles + Clearances + Contested.Possessions + Frees.For + Inside.50s + Goal.Assists, data = combined_data)
+summary(nb_model)
+plot(nb_model)
+
+
+
+# Creating interaction terms
+combined_data$Interaction_Disposals_Contested <- combined_data$Disposals * combined_data$Contested.Possessions
+combined_data$Interaction_Disposals_Clearances <- combined_data$Disposals * combined_data$Clearances
+combined_data$Interaction_Contested_Clearances <- combined_data$Contested.Possessions * combined_data$Clearances
+
+
+# Fit the Negative Binomial model with interaction terms
+nb_model_interactions <- glm.nb(Brownlow.Votes ~ Disposals + Contested.Possessions + Clearances + 
+                                  Interaction_Disposals_Contested + Interaction_Disposals_Clearances + 
+                                  Interaction_Contested_Clearances, 
+                                data = combined_data, link = log)
+
+# Summary of the model to check the impact of interactions
+summary(nb_model_interactions)
+
+par(mfrow = c(2, 2))
+plot(nb_model_interactions)
+
+AIC(nb_model_interactions, nb_model)
+
+
+
+
+combined_data$log_Disposals <- log(combined_data$Disposals + 1)  # Avoid log(0)
+
+nb_model_revised <- glm.nb(Brownlow.Votes ~ log_Disposals + Contested.Possessions + 
+                             Clearances + Interaction_Disposals_Contested + 
+                             Interaction_Disposals_Clearances, 
+                           data = combined_data, link = log)
+
+# Check the summary and AIC
+summary(nb_model_revised)
+AIC(nb_model_revised, nb_model_interactions, nb_model)
+
+
+
+cooksd <- cooks.distance(nb_model_interactions)
+
+# Set threshold to remove influential observations
+influential <- which(cooksd > (4/length(cooksd)))
+
+# Remove these observations from the dataset
+clean_data <- combined_data[-influential,]
+
+# Re-fit the model without these outliers
+nb_model_clean <- glm.nb(Brownlow.Votes ~ Disposals + Contested.Possessions + Clearances + 
+                           Interaction_Disposals_Contested + Interaction_Disposals_Clearances, 
+                         data = clean_data, link = log)
+
+# Summary of the cleaned model
+summary(nb_model_clean)
+
+
+nb_model_simplified <- glm.nb(Brownlow.Votes ~ Disposals + Contested.Possessions + 
+                                Clearances + Interaction_Disposals_Contested + 
+                                Interaction_Disposals_Clearances, 
+                              data = clean_data, link = log)
+
+# Summary of the simplified model
+summary(nb_model_simplified)
+
+
+clean_data$log_Disposals <- log(clean_data$Disposals + 1)  # Avoid log(0) issue
+
+# Re-fit model with transformed variable
+nb_model_transformed <- glm.nb(Brownlow.Votes ~ log_Disposals + Contested.Possessions + 
+                                 Clearances, data = clean_data, link = log)
+
+# Summary of the model with transformed variables
+summary(nb_model_transformed)
+
+
+AIC(nb_model_clean, nb_model_simplified, nb_model_transformed, glm_model, model)
+
+# Plot diagnostics for the transformed model
+par(mfrow = c(2, 2))
+plot(nb_model_transformed)
+
+
+
+# Example of adding polynomial features
+clean_data$Disposals_squared <- clean_data$Disposals^2
+
+# Fit model with polynomial term
+nb_model_poly <- glm.nb(Brownlow.Votes ~ log_Disposals + Disposals_squared + 
+                          Contested.Possessions + Clearances, data = clean_data, link = log)
+
+# Compare AIC
+AIC(nb_model_transformed, nb_model_poly)
+
+# Plot the model with polynomial term
+par(mfrow = c(2, 2))
+plot(nb_model_poly)
+
+# Cross-validation example using caret
+set.seed(123)
+train_control <- trainControl(method = "cv", number = 10, savePredictions = "final")
+nb_model_cv <- train(Brownlow.Votes ~ log_Disposals + Disposals_squared + 
+                       Contested.Possessions + Clearances, data = clean_data, 
+                     method = "glm", family = "quasipoisson", trControl = train_control)
+
+# Print cross-validation results
+print(nb_model_cv)
+
+
+
+
+library(car)
+vif(nb_model_clean) 
+
+updated_model <- glm(Brownlow.Votes ~ Disposals * Contested.Possessions + Clearances, data = combined_data, family = "poisson")
+summary(updated_model)
+
+non_linear_model <- glm(Brownlow.Votes ~ Disposals + I(Disposals^2) + Clearances, data = combined_data, family = "poisson")
+summary(non_linear_model)
+
+# Expanding the model
+expanded_model <- glm(Brownlow.Votes ~ Disposals + Clearances + Goals + Goal.Assists + Inside.50s, data = combined_data, family = "poisson")
+summary(expanded_model)
+
+
+
+
+
+library(quantmod)
+
+# Simplified Poisson Model
+simplified_model <- glm(Brownlow.Votes ~ log_Disposals + Clearances + Goals + Clearances, 
+                        data = combined_data, 
+                        family = poisson(link = "log"))
+
+# Summary of the simplified model
+summary(simplified_model)
+
+
+set.seed(123)  # for reproducibility
+train_control <- trainControl(method = "cv", number = 10)  # 10-fold cross-validation
+
+# Train the model using cross-validation
+cv_model <- train(Brownlow.Votes ~ log_Disposals + Clearances + Goals,
+                  data = combined_data, 
+                  method = "glm", 
+                  family = poisson(link = "log"), 
+                  trControl = train_control)
+
+# Print cross-validation results
+print(cv_model)
+
+
+par(mfrow = c(2, 2))
+plot(simplified_model)
+
+new_data <- combined_data[sample(nrow(combined_data), 10), ]  # Randomly selecting 10 rows for illustration
+
+# Adding a new variable to simulate unseen data (if necessary)
+new_data$Disposals <- new_data$Disposals * sample(0.8:1.2, 10, replace = TRUE)  # Random adjustment to disposals
+
+new_data$log_Disposals <- log(new_data$Disposals + 1)
+predictions <- predict(simplified_model, new_data, type = "response")
+
+# Evaluate predictions
+actual_vs_predicted <- data.frame(Actual = new_data$Brownlow.Votes, Predicted = predictions)
+head(actual_vs_predicted)
+
+
+predictions <- predict(simplified_model, newdata = new_data, type = "response")
+
+# Output the predictions
+new_data$Predicted_Votes <- predictions
+print(new_data[, c("Brownlow.Votes", "Predicted_Votes")])
+
+
+# Advanced: Cross-validation for model validation
+library(caret)
+set.seed(123)
+train_control <- trainControl(method = "cv", number = 10)
+model_cv <- train(Brownlow.Votes ~ Disposals + Goals + Tackles + Clearances + Contested.Possessions, data = combined_data, method = "lm", trControl = train_control)
+print(model_cv)
+
+# Filter for only regular season games
+data <- data %>%
+  filter(Date < '2022-08-30')
+
+# Creating unique player_id by name to easily identify players
+data3 <- data %>%
+  mutate(Player = 
+           paste(First.name, Surname, sep = "-"))
+
+colnames(data)
+# Obtaining selected season stats by player
+player_season_data <- data3 %>%
+  group_by(Player, ID) %>% 
+  summarise(total_clear=sum(Clearances),
+            total_kicks=sum(Kicks),
+            total_handballs=sum(Handballs),
+            total_disposals=total_kicks+total_handballs,
+            total_contposs=sum(Contested.Possessions),
+            total_marks=sum(Marks), 
+            
+            total_tackles=sum(Tackles),
+            total_uncontposs=sum(Uncontested.Possessions), 
+            total_I50=sum(Inside.50s), 
+            total_goals=sum(Goals),
+            brownlow=sum(Brownlow.Votes))
+
+
+model <- lm(brownlow ~ total_clear + total_disposals + total_goals + total_tackles, data = player_season_data)
+
+# Check the summary of the model to see coefficients and statistics
+summary(model)
+
+
+par(mfrow=c(2,2))
+plot(model)
+
+
+
+# Checking for linearity and adding polynomial terms if necessary
+model2 <- lm(brownlow ~ poly(total_clear, 2) + total_disposals + total_goals + total_tackles, data = player_season_data)
+summary(model2)
+
+# Checking for interaction effects
+model3 <- lm(brownlow ~ total_clear * total_disposals + total_goals + total_tackles, data = player_season_data)
+summary(model3)
+
+# Using robust regression to mitigate influence of outliers
+library(MASS)
+robust_model <- rlm(brownlow ~ total_clear + total_disposals + total_goals + total_tackles, data = player_season_data)
+summary(robust_model)
+
+# Transforming the response variable to correct heteroscedasticity
+log_model <- lm(log(brownlow+1) ~ total_clear + total_disposals + total_goals + total_tackles, data = player_season_data)
+summary(log_model)
+
+
+library(caret)
+set.seed(123)
+fitControl <- trainControl(method = "cv", number = 10)
+modelCV <- train(brownlow ~ total_clear * total_disposals + total_goals + total_tackles,
+                 data = player_season_data,
+                 method = "lm",
+                 trControl = fitControl)
+summary(modelCV)
+
+
+
+
+player_season_data_corr <- player_season_data[,-c(1:2,4:5)]
+
+
+
+library(psych)
+pairs.panels(player_season_data_corr,
+             scale = TRUE,
+             smoother = TRUE)
